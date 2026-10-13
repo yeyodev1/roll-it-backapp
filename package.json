@@ -14,7 +14,8 @@
     "start": "node dist/index.js",
     "seed:admin": "ts-node-dev --transpile-only src/scripts/seed-admin.ts",
     "format": "prettier --write 'src/**/*.{ts,json,md}' 'api/**/*.ts'",
-    "seed:demo": "ts-node-dev --transpile-only src/scripts/seed-demo.ts"
+    "seed:demo": "ts-node-dev --transpile-only src/scripts/seed-demo.ts",
+    "import:real": "ts-node-dev --transpile-only src/scripts/import-real.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
