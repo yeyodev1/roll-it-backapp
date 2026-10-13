@@ -1,7 +1,8 @@
 import bcrypt from "bcryptjs";
-import mongoose, { Schema } from "mongoose";
+import mongoose, { Schema, Types } from "mongoose";
 
-export const ACCOUNT_TYPES = ["customer", "admin"] as const;
+// admin = dueño (ve todas las sucursales); staff = personal de una sucursal (inventario y facturas de la suya).
+export const ACCOUNT_TYPES = ["customer", "admin", "staff"] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
 export interface IUser {
@@ -10,6 +11,7 @@ export interface IUser {
   name: string;
   phone: string;
   accountType: AccountType;
+  branch: Types.ObjectId | null;
   isActive: boolean;
   lastLoginAt: Date | null;
   resetPasswordToken: string | null;
@@ -26,6 +28,7 @@ const userSchema = new Schema<IUser>(
     name: { type: String, default: "" },
     phone: { type: String, default: "" },
     accountType: { type: String, enum: ACCOUNT_TYPES, default: "customer" },
+    branch: { type: Schema.Types.ObjectId, ref: "Branch", default: null },
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
     resetPasswordToken: { type: String, default: null },
