@@ -16,11 +16,13 @@
     "format": "prettier --write 'src/**/*.{ts,json,md}' 'api/**/*.ts'"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "axios": "^1.7.9",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.10.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
+    "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.5",
