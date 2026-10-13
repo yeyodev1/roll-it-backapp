@@ -13,3 +13,4 @@ dist
 
 # Este proyecto usa pnpm; un lock de npm hace que Vercel cambie de gestor.
 package-lock.json
+.env*
