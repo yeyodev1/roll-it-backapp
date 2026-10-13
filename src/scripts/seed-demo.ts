@@ -70,23 +70,24 @@ const round = (value: number, decimals: number) =>
 
 // ---------- Catálogos ----------
 
+// La URL interna de cada SmartMenu se carga desde Ajustes: no va en un repo público.
 const BRANCHES = [
   {
     name: "Villa Club",
     slug: "villa-club",
-    smartmenuUrl: "http://10.221.11.156/SMARTMENU",
+    smartmenuUrl: "",
     base: 3.2,
   },
   {
     name: "Sucursal 2",
     slug: "sucursal-2",
-    smartmenuUrl: "http://10.221.11.140/SMARTMENU",
+    smartmenuUrl: "",
     base: 2.2,
   },
   {
     name: "Sucursal 3",
     slug: "sucursal-3",
-    smartmenuUrl: "http://10.221.11.206/SMARTMENU",
+    smartmenuUrl: "",
     base: 1.7,
   },
 ];
