@@ -14,6 +14,7 @@ export interface SessionUser {
   name: string;
   phone: string;
   accountType: string;
+  branch: string | null;
 }
 
 function sanitize(user: any): SessionUser {
@@ -23,12 +24,18 @@ function sanitize(user: any): SessionUser {
     name: user.name,
     phone: user.phone,
     accountType: user.accountType,
+    branch: user.branch ? user.branch.toString() : null,
   };
 }
 
 function signToken(user: any): string {
   return jwt.sign(
-    { userId: user._id.toString(), email: user.email, accountType: user.accountType },
+    {
+      userId: user._id.toString(),
+      email: user.email,
+      accountType: user.accountType,
+      branch: user.branch ? user.branch.toString() : null,
+    },
     env.JWT_SECRET,
     { expiresIn: TOKEN_TTL },
   );
@@ -94,6 +101,7 @@ export async function createUser(input: {
   name?: string;
   phone?: string;
   accountType?: IUser["accountType"];
+  branch?: string | null;
 }): Promise<SessionUser> {
   requireDb();
   const email = input.email.toLowerCase().trim();
@@ -108,6 +116,7 @@ export async function createUser(input: {
     name: input.name || "",
     phone: input.phone || "",
     accountType: input.accountType || "customer",
+    branch: input.branch || null,
   });
   return sanitize(user);
 }
