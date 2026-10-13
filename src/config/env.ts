@@ -42,4 +42,7 @@ export const env = {
   CLOUDINARY_API_KEY: optional("CLOUDINARY_API_KEY", ""),
   CLOUDINARY_API_SECRET: optional("CLOUDINARY_API_SECRET", ""),
   CRON_SECRET: optional("CRON_SECRET", ""),
+  SYNC_API_KEY: optional("SYNC_API_KEY", ""),
+  ANTHROPIC_API_KEY: optional("ANTHROPIC_API_KEY", ""),
+  ANTHROPIC_MODEL: optional("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
 } as const;
