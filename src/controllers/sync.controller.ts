@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import * as syncService from "../services/sync.service";
+import * as salesReportImportService from "../services/salesReportImport.service";
 
 /** POST /api/sync/sales — header x-sync-key; body: { branch: slug, sales: [...] } */
 export async function sales(req: Request, res: Response, next: NextFunction) {
@@ -15,6 +16,16 @@ export async function sales(req: Request, res: Response, next: NextFunction) {
 export async function status(_req: Request, res: Response, next: NextFunction) {
   try {
     res.status(200).json(await syncService.getSyncStatus());
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** POST /api/sync/upload — multipart `file` (reporte de SmartMenu) y opcional `branch` (slug). */
+export async function upload(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await salesReportImportService.importSalesReport(req.file, req.body?.branch);
+    res.status(200).json(result);
   } catch (error) {
     next(error);
   }
