@@ -33,7 +33,10 @@ StockRow    { ingredient: { _id, name, unit }, branch: { _id, name }, quantity, 
 Movement    { _id, branch: { _id, name }, ingredient: { _id, name, unit }, type: "initial"|"purchase"|"sale"|"adjustment"|"waste", quantity, note, date, createdBy: { _id, name } | null }
 
 InvoiceLine { rawName, ingredient: { _id, name, unit } | null, quantity, rawQuantity, rawUnit, unitCostCents, totalCents }
-Invoice     { _id, branch: { _id, name }, supplier, invoiceNumber, date, imageUrl, status: "review"|"confirmed"|"rejected", lines: InvoiceLine[], totalCents, extractedBy: "ai"|"manual", aiError, createdAt, confirmedAt }
+Invoice     { _id, branch: { _id, name }, supplier, invoiceNumber, date, imageUrl, status: "review"|"confirmed"|"rejected", lines: InvoiceLine[], totalCents, extractedBy: "ai"|"manual", aiError, source: "photo"|"closing", note, createdAt, confirmedAt }
+// source "closing" = compra copiada de la hoja CAJA CHICA del cierre de mes (pnpm import:drive):
+// imageUrl "", status "confirmed", una línea con el motivo tal cual y quantity 0 (la caja chica no
+// anota cantidades). `note` dice si es histórica (anterior al conteo inicial: no mueve stock).
 ```
 
 ## Catálogos (lectura: admin y staff; escritura: solo admin)
@@ -80,7 +83,7 @@ Invoice     { _id, branch: { _id, name }, supplier, invoiceNumber, date, imageUr
 
 | Método | Ruta | Body | Respuesta |
 |---|---|---|---|
-| GET | `/invoices` | `?branch=&status=&page=` | `{ items: Invoice[], total, page, pages }` |
+| GET | `/invoices` | `?branch=&status=&page=` — ordenadas por `date` de la factura, más nuevas primero | `{ items: Invoice[], total, page, pages }` |
 | GET | `/invoices/:id` | — | `Invoice` |
 | POST | `/invoices` | multipart `image` + `branch` (staff: se ignora y usa la suya). Sube a Cloudinary, la IA lee la factura y propone líneas cruzadas con insumos. Sin IA configurada queda con `lines: []` para cargar a mano. | `Invoice` (status `review`) |
 | PUT | `/invoices/:id` | `{ supplier?, invoiceNumber?, date?, lines? }` solo en `review` | `Invoice` |
@@ -168,10 +171,14 @@ GET /dashboard/operations → {
 }
 
 GET /dashboard/waiters → {
-  teamAvg: { avgTicketCents, ticketsPerDay, itemsPerTicket },
+  source: "tickets" | "closings" | "none",   // de dónde salen los números (ver abajo)
+  metrics: ("avgTicket" | "ticketsPerDay" | "itemsPerTicket")[],   // las que entran en el puntaje
+  closingsRange: { from, to } | null,        // días con cierre de mes cargado (para ofrecerlos si el rango está vacío)
+  teamAvg: { avgTicketCents: number | null, ticketsPerDay, itemsPerTicket },
   waiters: [{
     waiter: { _id, name }, branch: { _id, name },
-    salesCents, tickets, avgTicketCents, itemsPerTicket, ticketsPerDay, share, daysWorked,
+    salesCents: number | null, tickets, avgTicketCents: number | null, itemsPerTicket, ticketsPerDay,
+    share: number | null, daysWorked,
     score: 0..100,
     level: "top" | "ok" | "attention",
     reasons: string[]    // en español, concretas: "Ticket promedio 18% bajo el equipo ($12,40 vs $15,10)"
@@ -189,3 +196,15 @@ GET /dashboard/finance → {
 Score de meseros: compara contra el promedio del equipo en su sucursal → ticket promedio (40%), tickets por
 día trabajado (35%), ítems por ticket (25%); 50 = igual al equipo. `top` ≥ 65, `attention` < 40. Las
 `reasons` citan la métrica, el % y los valores. Se excluyen meseros con menos de 10 tickets en el período.
+
+Fuentes de meseros:
+- `tickets`: ventas (`Sale`) con `waiter`. Es la fuente buena y manda siempre que haya alguna en el período.
+- `closings`: si no hay tickets con mesero, se usa `WaiterDay` (hoja VENTA DIARIA del cierre de mes, cargada
+  con `pnpm import:drive`): un registro por mesera y día con `tables` (mesas atendidas) y `upsellUnits`
+  (cócteles, cervezas, postres, jugos y entradas sugeridos). Ahí `tickets` = mesas, `ticketsPerDay` = mesas
+  por día trabajado (día con mesas o sugeridos) e `itemsPerTicket` = productos sugeridos por mesa. El cierre
+  no trae venta en $ por mesera: `salesCents`, `avgTicketCents`, `share` y `teamAvg.avgTicketCents` van en
+  `null`, `metrics` no incluye `avgTicket`, el puntaje reparte los pesos entre las dos métricas que hay
+  (58% / 42%) y `reasons` termina avisando que el ticket promedio no entra. Mínimo: 5 mesas en el período.
+- `none`: no hay ni tickets con mesero ni cierres en el período (`waiters: []`). Si `closingsRange` no es
+  null, el panel ofrece saltar a esas fechas.
