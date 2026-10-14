@@ -136,6 +136,7 @@ GET /dashboard/waiters → {
 }
 
 GET /dashboard/finance → {
+  asOf: string,   // instante de referencia: ahora, o la última venta si los datos no están al día
   monthly: [{ month: "YYYY-MM", salesCents, tickets, avgTicketCents }],     // últimos 24 meses
   currentMonth: { month, salesCents, daysElapsed, daysInMonth, projectedCents, lastYearCents | null, vsLastYear: number | null },
   yearToDate: { salesCents, lastYearSameRangeCents | null }
