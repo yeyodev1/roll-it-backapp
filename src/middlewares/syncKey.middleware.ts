@@ -2,6 +2,15 @@ import { Request, Response, NextFunction } from "express";
 import { timingSafeEqual } from "crypto";
 import { env } from "../config/env";
 
+/** true si el header trae la llave del agente. Sin SYNC_API_KEY configurada nunca coincide. */
+export function isValidSyncKey(header: unknown): boolean {
+  if (!env.SYNC_API_KEY) return false;
+  const received = Buffer.from(typeof header === "string" ? header : "");
+  const expected = Buffer.from(env.SYNC_API_KEY);
+  // Comparación en tiempo constante: no deja adivinar la llave midiendo cuánto tarda la respuesta.
+  return received.length === expected.length && timingSafeEqual(received, expected);
+}
+
 /**
  * Llave compartida del agente que corre en la PC de cada sucursal.
  *
@@ -13,12 +22,7 @@ export function syncKeyMiddleware(req: Request, res: Response, next: NextFunctio
     res.status(503).json({ message: "La sincronización no está configurada" });
     return;
   }
-
-  const header = req.headers["x-sync-key"];
-  const received = Buffer.from(typeof header === "string" ? header : "");
-  const expected = Buffer.from(env.SYNC_API_KEY);
-  // Comparación en tiempo constante: no deja adivinar la llave midiendo cuánto tarda la respuesta.
-  if (received.length !== expected.length || !timingSafeEqual(received, expected)) {
+  if (!isValidSyncKey(req.headers["x-sync-key"])) {
     res.status(401).json({ message: "Llave de sincronización inválida" });
     return;
   }
