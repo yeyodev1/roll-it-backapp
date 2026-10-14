@@ -64,6 +64,8 @@ function serialize(doc: any) {
     totalCents: doc.totalCents,
     extractedBy: doc.extractedBy,
     aiError: doc.aiError,
+    source: doc.source ?? "photo",
+    note: doc.note ?? "",
     createdAt: doc.createdAt,
     confirmedAt: doc.confirmedAt,
   };
@@ -194,7 +196,8 @@ export async function listInvoices(params: {
   const [docs, total] = await Promise.all([
     populated(
       PurchaseInvoice.find(filter)
-        .sort({ createdAt: -1 })
+        // Por fecha de la factura: las del cierre se importan todas juntas y su createdAt no dice nada.
+        .sort({ date: -1, createdAt: -1 })
         .skip((page - 1) * PAGE_SIZE)
         .limit(PAGE_SIZE),
     ),
