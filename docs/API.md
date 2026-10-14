@@ -95,11 +95,54 @@ Header `x-sync-key: <SYNC_API_KEY>`. Lo usa el agente que corre en la PC de cada
 |---|---|---|---|
 | POST | `/sync/sales` | `{ branch: slug, sales: [{ externalId, date (ISO), waiterName?, table?, guests?, status?: "paid"|"void", items: [{ name, code?, quantity, unitPriceCents?, totalCents? }], totalCents? }] }` | `{ received, created, updated, inventoryApplied, unmappedProducts: string[] }` |
 | GET | `/sync/status` | — (JWT admin, no sync key) | `[{ branch: Branch, lastSyncAt, salesToday }]` |
+| POST | `/sync/upload` | — (JWT admin, no sync key) multipart `file` + opcional `branch` (slug). Ver abajo. | `SalesReportResult` |
 
 Reglas: upsert por `(branch, externalId)`. Plato se cruza por `code` → `smartmenuCode`, si no por nombre
 normalizado; si no existe se crea (sin receta) y se reporta en `unmappedProducts`. Mesero se crea por nombre.
 Al quedar `paid` y con `inventoryApplied: false` se descuenta el inventario con la receta y se marca. Si un
 ticket pasa a `void` después de aplicado, se devuelve el stock con un movimiento `adjustment`.
+
+### Subir el reporte de SmartMenu a mano (`POST /sync/upload`)
+
+Mientras no haya agente en el local, el dueño exporta en SmartMenu el **REPORTE DE VENTAS DETALLADO** y lo
+sube desde el panel. Las ventas quedan cargadas al instante, con las mismas reglas de `/sync/sales` (por
+dentro se llama a la misma función).
+
+- Archivo: `.xls` (el exporte tal cual, Excel 97), `.xlsx` o `.csv` (UTF-8 o Windows-1252, con `,` o `;`).
+  Máximo 15 MB. Se busca la cabecera en las primeras 20 filas; columnas por nombre (sin importar
+  mayúsculas ni tildes): `Documento`, `Número documento`, `Fecha`, `Producto`, `Cantidad`, `Total`
+  obligatorias; `Código producto`, `Categoría producto`, `Precio unitario`, `Descuento ($)`, `Subtotal`,
+  `Información` opcionales. `Fecha` como `AAAA-MM-DD HH:MM:SS` (hora de Ecuador) o `DD/MM/AAAA HH:MM`.
+- Sucursal: se detecta por la dirección del encabezado (`PACIFICO` → `villa-club`; `PUNTILLA` o
+  `SAMBORONDON` → `marbol`). Si no se reconoce (p. ej. un CSV sin encabezado) se usa `branch`; sin ninguno
+  responde 400. Si se detecta una y `branch` dice otra, 400 (evita cargar ventas en el local equivocado).
+- Un ticket = las líneas con el mismo `Documento` + `Número documento`; `externalId` = `FACTURA-1551` /
+  `TICKETS-1551`, el mismo con que se importó la historia. Solo cuentan `FACTURA` y `TICKETS`.
+- Se excluyen las líneas con `ANULADA POR` en `Información` y los fees de franquicia (categoría
+  `FRANCHISE FEE` o `FEE` en el nombre). Cortesía (descuento > 0 y subtotal 0) → `totalCents: 0`. El nombre
+  del plato se limpia del canal (`LOCAL`, `UBER`, `PEDIDOS YA`…) y de la presentación repetida.
+- Platos: por `Código producto` y si no por nombre, como en `/sync/sales`. Un código que el historial
+  muestra con dos platos (SmartMenu los reutiliza) no se usa: esa línea se cruza por nombre.
+- Idempotente: un ticket que ya está cargado con las mismas líneas (cantidad e importe) no se reenvía
+  (`unchanged`); uno que cambió se actualiza; uno anulado entero que ya estaba cargado pasa a `void` y
+  devuelve su stock. Subir el mismo archivo dos veces no duplica ni descuenta dos veces.
+- `lastSyncAt` de la sucursal queda en la fecha de la última venta del reporte (nunca retrocede).
+- Límite de tiempo de Vercel: se carga por lotes y, si se acerca a los 60 s, responde con lo cargado y
+  `pending > 0`. Se sube el mismo archivo otra vez para terminar. Un reporte de dos semanas entra de una.
+
+```ts
+SalesReportResult {
+  branch: { _id, name, slug },
+  from: string | null, to: string | null,   // primera y última venta del reporte (ISO)
+  rows,             // líneas de venta leídas (FACTURA/TICKETS)
+  tickets,          // tickets válidos en el archivo
+  received,         // tickets enviados al sincronizador (nuevos, cambiados o anulados)
+  unchanged,        // ya estaban cargados igual: no se tocaron
+  created, updated, inventoryApplied,
+  unmappedProducts: string[],   // platos creados sin receta
+  pending           // tickets que faltan por el límite de tiempo (normalmente 0)
+}
+```
 
 ## Dashboard (solo admin)
 
