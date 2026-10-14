@@ -21,7 +21,19 @@ export async function status(_req: Request, res: Response, next: NextFunction) {
   }
 }
 
-/** POST /api/sync/upload — multipart `file` (reporte de SmartMenu) y opcional `branch` (slug). */
+/** POST /api/sync/heartbeat — header x-sync-key; body: { branch, agentVersion, mode, lastError? } */
+export async function heartbeat(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json(await syncService.recordHeartbeat(req.body));
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * POST /api/sync/upload — multipart `file` (reporte de SmartMenu) y `branch` (slug).
+ * JWT admin desde el panel o x-sync-key desde el agente del local.
+ */
 export async function upload(req: Request, res: Response, next: NextFunction) {
   try {
     const result = await salesReportImportService.importSalesReport(req.file, req.body?.branch);
