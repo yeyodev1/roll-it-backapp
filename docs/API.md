@@ -15,7 +15,7 @@ Query comunes de lectura: `branch` (id de sucursal, o `all`/vacío = todas), `fr
 ## Tipos
 
 ```ts
-Branch      { _id, name, slug, smartmenuUrl, isActive, lastSyncAt }
+Branch      { _id, name, slug, smartmenuUrl, isActive, lastSyncAt, agentLastSeenAt, agentStatus: { version, mode, lastError } }
 Product     { _id, name, smartmenuCode, category, priceCents, isActive, hasRecipe }
 Ingredient  { _id, name, unit: "g"|"kg"|"ml"|"l"|"unidad", costPerUnitCents, defaultMinStock, defaultMaxStock, aliases, isActive }
 Recipe      { _id, product: { _id, name, category }, items: [{ ingredient: { _id, name, unit }, quantity }], notes }
@@ -97,13 +97,27 @@ Header `x-sync-key: <SYNC_API_KEY>`. Lo usa el agente que corre en la PC de cada
 | Método | Ruta | Body | Respuesta |
 |---|---|---|---|
 | POST | `/sync/sales` | `{ branch: slug, sales: [{ externalId, date (ISO), waiterName?, table?, guests?, status?: "paid"|"void", items: [{ name, code?, quantity, unitPriceCents?, totalCents? }], totalCents? }] }` | `{ received, created, updated, inventoryApplied, unmappedProducts: string[] }` |
-| GET | `/sync/status` | — (JWT admin, no sync key) | `[{ branch: Branch, lastSyncAt, salesToday }]` |
-| POST | `/sync/upload` | — (JWT admin, no sync key) multipart `file` + opcional `branch` (slug). Ver abajo. | `SalesReportResult` |
+| POST | `/sync/heartbeat` | `{ branch: slug, agentVersion, mode: "descubrir"|"carpeta"|"auto", lastError? }` — el agente lo manda en cada ciclo. Guarda `agentLastSeenAt` y `agentStatus` en la sucursal. | `{ ok, branch: { _id, name, slug }, serverTime }` |
+| GET | `/sync/status` | — (JWT admin, no sync key) | `[{ branch: Branch, lastSyncAt, salesToday, agent: AgentInfo }]` |
+| POST | `/sync/upload` | JWT admin **o** `x-sync-key`. multipart `file` + `branch` (slug; con sync key es obligatorio salvo que se detecte del archivo). Ver abajo. | `SalesReportResult` |
 
 Reglas: upsert por `(branch, externalId)`. Plato se cruza por `code` → `smartmenuCode`, si no por nombre
 normalizado; si no existe se crea (sin receta) y se reporta en `unmappedProducts`. Mesero se crea por nombre.
 Al quedar `paid` y con `inventoryApplied: false` se descuenta el inventario con la receta y se marca. Si un
 ticket pasa a `void` después de aplicado, se devuelve el stock con un movimiento `adjustment`.
+
+```ts
+AgentInfo {
+  state: "live" | "offline" | "none",   // live: latido hace < 10 min; none: nunca se instaló
+  lastSeenAt: string | null,
+  version: string, mode: "descubrir" | "carpeta" | "auto" | "", lastError: string
+}
+```
+
+Si llega el header `x-sync-key` en `/sync/upload` se valida solo la llave (401 si no coincide, no cae al
+JWT). El agente (`roll-it-agent`) sube el reporte del día cada pocos minutos; como el upload es
+idempotente, reenviar el mismo archivo o uno que se cruza no duplica. Si responde `pending > 0` lo vuelve a
+subir hasta que quede en 0.
 
 ### Subir el reporte de SmartMenu a mano (`POST /sync/upload`)
 
