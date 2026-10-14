@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import { Sale } from "../models/sale.model";
 import { DashboardQuery, ECUADOR_TZ, ensureDb, parseBranch, salesMatch } from "./dashboard.service";
-import { ECUADOR_OFFSET_HOURS } from "../utils/time";
+import { ECUADOR_OFFSET_HOURS, startOfEcuadorDay } from "../utils/time";
 
 const MONTHS = 24;
 const OFFSET_MS = ECUADOR_OFFSET_HOURS * 60 * 60 * 1000;
@@ -37,7 +37,14 @@ export async function getFinance(query: DashboardQuery) {
   await ensureDb();
   const branch = parseBranch(query.branch);
 
-  const now = new Date();
+  // Mientras SmartMenu no mande ventas en vivo, "este mes" es el de la última
+  // venta: si no, Finanzas mostraría un mes actual vacío. Con ventas de hoy,
+  // la referencia vuelve a ser ahora.
+  const lastSale = await Sale.findOne(salesMatch(branch, new Date(0), new Date()))
+    .sort({ date: -1 })
+    .select("date")
+    .lean<{ date: Date }>();
+  const now = lastSale && lastSale.date < startOfEcuadorDay(new Date()) ? lastSale.date : new Date();
   const local = new Date(now.getTime() + OFFSET_MS);
   const year = local.getUTCFullYear();
   const month0 = local.getUTCMonth();
@@ -89,6 +96,7 @@ export async function getFinance(query: DashboardQuery) {
   const lastYear = byMonth.get(monthKey(year - 1, month0))?.salesCents ?? 0;
 
   return {
+    asOf: now.toISOString(),
     monthly,
     currentMonth: {
       month: current.month,
