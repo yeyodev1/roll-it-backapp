@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import { dbConnect, isConnected } from "../config/mongo";
 import { CustomError } from "../errors/customError.error";
-import { Branch } from "../models/branch.model";
+import { AgentMode, Branch } from "../models/branch.model";
 import { InventoryMovement } from "../models/inventoryMovement.model";
 import { Product } from "../models/product.model";
 import { Recipe } from "../models/recipe.model";
@@ -365,6 +365,51 @@ export async function ingestSales(branchSlug: unknown, sales: unknown): Promise<
   return result;
 }
 
+const AGENT_MODES: AgentMode[] = ["descubrir", "carpeta", "auto"];
+// Con un latido cada pocos minutos, 10 sin noticias ya es que la PC o internet se cayó.
+export const AGENT_LIVE_MS = 10 * 60 * 1000;
+const MAX_ERROR_LENGTH = 500;
+
+export type AgentState = "live" | "offline" | "none";
+
+export function agentState(
+  lastSeenAt: Date | string | null | undefined,
+  now = new Date(),
+): AgentState {
+  if (!lastSeenAt) return "none";
+  return now.getTime() - new Date(lastSeenAt).getTime() < AGENT_LIVE_MS ? "live" : "offline";
+}
+
+/** POST /sync/heartbeat: el agente avisa que sigue vivo en cada ciclo. */
+export async function recordHeartbeat(body: any) {
+  await ensureDb();
+  const slug = typeof body?.branch === "string" ? body.branch.trim().toLowerCase() : "";
+  if (!slug) throw new CustomError("Falta la sucursal (slug)", 400);
+  const mode = typeof body?.mode === "string" ? body.mode.trim().toLowerCase() : "";
+  if (!AGENT_MODES.includes(mode as AgentMode)) {
+    throw new CustomError(`El modo debe ser ${AGENT_MODES.join(", ")}`, 400);
+  }
+  const version =
+    typeof body?.agentVersion === "string" ? body.agentVersion.trim().slice(0, 40) : "";
+  const lastError =
+    typeof body?.lastError === "string" ? body.lastError.trim().slice(0, MAX_ERROR_LENGTH) : "";
+
+  const now = new Date();
+  const branch = await Branch.findOneAndUpdate(
+    { slug },
+    { $set: { agentLastSeenAt: now, agentStatus: { version, mode, lastError } } },
+    { new: true },
+  )
+    .select("_id name slug agentLastSeenAt agentStatus")
+    .lean<any>();
+  if (!branch) throw new CustomError(`La sucursal «${slug}» no existe`, 404);
+  return {
+    ok: true,
+    branch: { _id: branch._id, name: branch.name, slug: branch.slug },
+    serverTime: now,
+  };
+}
+
 export async function getSyncStatus() {
   await ensureDb();
   const since = startOfEcuadorDay(new Date());
@@ -376,9 +421,17 @@ export async function getSyncStatus() {
     ]),
   ]);
   const counts = new Map(today.map((t) => [String(t._id), t.count]));
+  const now = new Date();
   return branches.map((branch) => ({
     branch,
     lastSyncAt: branch.lastSyncAt ?? null,
     salesToday: counts.get(String(branch._id)) ?? 0,
+    agent: {
+      state: agentState(branch.agentLastSeenAt, now),
+      lastSeenAt: branch.agentLastSeenAt ?? null,
+      version: branch.agentStatus?.version ?? "",
+      mode: branch.agentStatus?.mode ?? "",
+      lastError: branch.agentStatus?.lastError ?? "",
+    },
   }));
 }
