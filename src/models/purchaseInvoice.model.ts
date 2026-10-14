@@ -14,10 +14,16 @@ export interface IInvoiceLine {
   totalCents: number;
 }
 
+export const INVOICE_SOURCES = ["photo", "closing"] as const;
+export type InvoiceSource = (typeof INVOICE_SOURCES)[number];
+
 /**
  * Factura de un proveedor fotografiada en el local. La IA propone las líneas
  * y alguien las revisa: el stock solo sube al confirmar, nunca con lo que
  * leyó la IA sin revisar.
+ *
+ * `source: "closing"` es una compra copiada del cierre de mes del local (hoja
+ * CAJA CHICA): no tiene foto y `externalId` la hace idempotente al reimportar.
  */
 export interface IPurchaseInvoice {
   _id: Types.ObjectId;
@@ -32,6 +38,9 @@ export interface IPurchaseInvoice {
   totalCents: number;
   extractedBy: "ai" | "manual";
   aiError: string;
+  source: InvoiceSource;
+  externalId: string;
+  note: string;
   createdBy: Types.ObjectId | null;
   confirmedBy: Types.ObjectId | null;
   confirmedAt: Date | null;
@@ -65,12 +74,22 @@ const purchaseInvoiceSchema = new Schema<IPurchaseInvoice>(
     totalCents: { type: Number, default: 0 },
     extractedBy: { type: String, enum: ["ai", "manual"], default: "manual" },
     aiError: { type: String, default: "" },
+    source: { type: String, enum: INVOICE_SOURCES, default: "photo" },
+    externalId: { type: String, default: "" },
+    note: { type: String, default: "" },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     confirmedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     confirmedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
+
+// Solo las importadas llevan externalId: las fotos quedan fuera del índice único.
+purchaseInvoiceSchema.index(
+  { branch: 1, externalId: 1 },
+  { unique: true, partialFilterExpression: { externalId: { $gt: "" } } },
+);
+purchaseInvoiceSchema.index({ date: -1 });
 
 export const PurchaseInvoice =
   mongoose.models.PurchaseInvoice ||
