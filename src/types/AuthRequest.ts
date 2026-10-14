@@ -10,4 +10,6 @@ export interface JwtPayload {
 
 export interface AuthRequest extends Request {
   user?: JwtPayload;
+  // La pidió el agente del local con la llave de sincronización, no una persona.
+  syncAgent?: boolean;
 }
