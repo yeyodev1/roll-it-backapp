@@ -69,6 +69,23 @@ export async function loadRecipes(productIds: (string | Types.ObjectId)[]): Prom
   return new Map(recipes.map((r) => [String(r.product), r.items ?? []]));
 }
 
+const COUNT_CACHE_MS = 5 * 60 * 1000;
+const countCache = new Map<string, { at: number; date: Date | null }>();
+
+/** Fecha del último conteo inicial del local; se cachea un rato porque se consulta por ticket. */
+async function initialCountDate(branch: unknown): Promise<Date | null> {
+  const key = String(branch);
+  const hit = countCache.get(key);
+  if (hit && Date.now() - hit.at < COUNT_CACHE_MS) return hit.date;
+  const last = await InventoryMovement.findOne({ branch, type: "initial" })
+    .sort({ date: -1 })
+    .select("date")
+    .lean<any>();
+  const date = last?.date ? new Date(last.date) : null;
+  countCache.set(key, { at: Date.now(), date });
+  return date;
+}
+
 /**
  * Descuenta del inventario lo que consumió un ticket pagado, según la receta
  * de cada plato. Devuelve true si este llamado fue el que lo aplicó.
@@ -80,6 +97,15 @@ export async function loadRecipes(productIds: (string | Types.ObjectId)[]): Prom
 export async function applySaleInventory(sale: any, recipes?: RecipeMap): Promise<boolean> {
   if (!sale?._id || sale.status !== "paid" || sale.inventoryApplied) return false;
   await ensureDb();
+
+  // Lo vendido antes del conteo inicial ya está dentro de ese conteo (misma regla que import-real):
+  // se marca aplicada sin mover stock, así cargar historia vieja no vacía el inventario.
+  const counted = await initialCountDate(sale.branch);
+  if (counted && sale.date && new Date(sale.date) <= counted) {
+    await Sale.updateOne({ _id: sale._id, inventoryApplied: false }, { $set: { inventoryApplied: true } });
+    sale.inventoryApplied = true;
+    return false;
+  }
 
   const items: any[] = sale.items ?? [];
   const recipeMap = recipes ?? (await loadRecipes(items.map((i) => i.product).filter(Boolean)));
