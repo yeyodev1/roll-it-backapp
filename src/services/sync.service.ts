@@ -417,10 +417,13 @@ export async function recordHeartbeat(body: any) {
     .lean<any>();
   if (!branch) throw new CustomError(`La sucursal «${slug}» no existe`, 404);
   await notifyAgentChange(branch.name, branch.agentStatus?.lastError ?? "", lastError);
+  // El agente que arranca en una máquina nueva carga desde aquí, no solo desde hoy.
+  const lastSale = await Sale.findOne({ branch: branch._id }).sort({ date: -1 }).select("date").lean<any>();
   return {
     ok: true,
     branch: { _id: branch._id, name: branch.name, slug: branch.slug },
     serverTime: now,
+    lastSaleAt: lastSale?.date ?? null,
   };
 }
 
