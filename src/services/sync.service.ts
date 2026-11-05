@@ -1,4 +1,6 @@
+import axios from "axios";
 import { Types } from "mongoose";
+import { env } from "../config/env";
 import { dbConnect, isConnected } from "../config/mongo";
 import { CustomError } from "../errors/customError.error";
 import { AgentMode, Branch } from "../models/branch.model";
@@ -380,6 +382,16 @@ export function agentState(
   return now.getTime() - new Date(lastSeenAt).getTime() < AGENT_LIVE_MS ? "live" : "offline";
 }
 
+/** Slack cuando un local empieza a fallar o se recupera. Nunca tumba el latido. */
+async function notifyAgentChange(branchName: string, before: string, after: string) {
+  if (!env.SLACK_ERROR_WEBHOOK || Boolean(before) === Boolean(after)) return;
+  const text = after
+    ? `:warning: *Roll It · ${branchName}*: el agente no pudo sincronizar las ventas.\n>${after}`
+    : `:white_check_mark: *Roll It · ${branchName}*: el agente volvió a sincronizar.`;
+  // Se espera la respuesta: en Vercel la función se congela apenas responde.
+  await axios.post(env.SLACK_ERROR_WEBHOOK, { text }, { timeout: 5_000 }).catch(() => undefined);
+}
+
 /** POST /sync/heartbeat: el agente avisa que sigue vivo en cada ciclo. */
 export async function recordHeartbeat(body: any) {
   await ensureDb();
@@ -398,11 +410,13 @@ export async function recordHeartbeat(body: any) {
   const branch = await Branch.findOneAndUpdate(
     { slug },
     { $set: { agentLastSeenAt: now, agentStatus: { version, mode, lastError } } },
-    { new: true },
+    // Se lee el estado anterior para avisar solo cuando cambia, no en cada latido.
+    { new: false },
   )
     .select("_id name slug agentLastSeenAt agentStatus")
     .lean<any>();
   if (!branch) throw new CustomError(`La sucursal «${slug}» no existe`, 404);
+  await notifyAgentChange(branch.name, branch.agentStatus?.lastError ?? "", lastError);
   return {
     ok: true,
     branch: { _id: branch._id, name: branch.name, slug: branch.slug },
