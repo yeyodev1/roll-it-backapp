@@ -205,10 +205,7 @@ export async function ingestSales(branchSlug: unknown, sales: unknown): Promise<
     inventoryApplied: 0,
     unmappedProducts: [],
   };
-  if (!sales.length) {
-    await Branch.updateOne({ _id: branch._id }, { $set: { lastSyncAt: new Date() } });
-    return result;
-  }
+  if (!sales.length) return result;
 
   // --- Platos: un solo find para todo el lote, y se crean los que falten.
   const rawItems = (sales as any[]).flatMap((s) => (Array.isArray(s?.items) ? s.items : []));
@@ -388,7 +385,12 @@ export async function ingestSales(branchSlug: unknown, sales: unknown): Promise<
     }
   }
 
-  await Branch.updateOne({ _id: branch._id }, { $set: { lastSyncAt: new Date() } });
+  // `lastSyncAt` es la última venta cargada, no la hora del envío: el panel muestra hasta cuándo hay datos
+  // (que el agente sigue vivo lo dice el latido). $max: cargar historia vieja no lo retrocede.
+  if (prepared.length) {
+    const latest = new Date(Math.max(...prepared.map((p) => p.date.getTime())));
+    await Branch.updateOne({ _id: branch._id }, { $max: { lastSyncAt: latest } });
+  }
   result.unmappedProducts = [...unmapped];
   return result;
 }
