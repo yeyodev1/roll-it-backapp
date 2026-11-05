@@ -505,8 +505,8 @@ export async function importSalesReport(
   // Con tickets pendientes los datos están completos solo hasta el último lote cargado.
   if (!result.pending && dates.length) lastDate = new Date(Math.max(...dates));
 
-  // `ingestSales` marca la hora actual; con un reporte manual los datos llegan
-  // solo hasta la última venta, y el panel ancla sus filtros a esa fecha. Nunca
+  // Con tickets pendientes `ingestSales` ya movió lastSyncAt a su lote; aquí se fija la última venta
+  // completa del reporte, y el panel ancla sus filtros a esa fecha. Nunca
   // se retrocede: subir un reporte viejo no esconde lo que ya estaba al día.
   const previous = branch.lastSyncAt ? new Date(branch.lastSyncAt) : null;
   const lastSyncAt =
