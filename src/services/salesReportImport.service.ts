@@ -50,6 +50,7 @@ const SALE_DATE_DMY = /^(\d{2})[/-](\d{2})[/-](\d{4}) (\d{2}):(\d{2})(?::(\d{2})
 const BRANCH_BY_ADDRESS: [RegExp, string][] = [
   [/PACIFICO/, "villa-club"],
   [/PUNTILLA|SAMBORONDON/, "marbol"],
+  [/BENIGNO MALO|CUENCA/, "cuenca"],
 ];
 
 type Column =
