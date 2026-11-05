@@ -21,6 +21,15 @@ export async function status(_req: Request, res: Response, next: NextFunction) {
   }
 }
 
+/** POST /api/sync/waiters — header x-sync-key; body: { branch, waiterName, externalIds: [...] } */
+export async function waiters(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json(await syncService.assignWaiter(req.body));
+  } catch (error) {
+    next(error);
+  }
+}
+
 /** POST /api/sync/heartbeat — header x-sync-key; body: { branch, agentVersion, mode, lastError? } */
 export async function heartbeat(req: Request, res: Response, next: NextFunction) {
   try {
