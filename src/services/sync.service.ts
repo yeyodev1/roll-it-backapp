@@ -102,7 +102,10 @@ export async function applySaleInventory(sale: any, recipes?: RecipeMap): Promis
   // se marca aplicada sin mover stock, así cargar historia vieja no vacía el inventario.
   const counted = await initialCountDate(sale.branch);
   if (counted && sale.date && new Date(sale.date) <= counted) {
-    await Sale.updateOne({ _id: sale._id, inventoryApplied: false }, { $set: { inventoryApplied: true } });
+    await Sale.updateOne(
+      { _id: sale._id, inventoryApplied: false },
+      { $set: { inventoryApplied: true } },
+    );
     sale.inventoryApplied = true;
     return false;
   }
@@ -332,10 +335,11 @@ export async function ingestSales(branchSlug: unknown, sales: unknown): Promise<
   for (const { raw, items, date, externalId } of prepared) {
     const { weekday, hour } = ecuadorParts(date);
     const subtotalCents = items.reduce((sum, i) => sum + i.totalCents, 0);
-    const waiterName = typeof raw.waiterName === "string" ? raw.waiterName.trim() : "";
+    // El reporte de ventas no trae mesero: si el lote no lo manda, no se borra el que ya tenía el ticket.
+    const hasWaiter = typeof raw.waiterName === "string";
+    const waiterName = hasWaiter ? raw.waiterName.trim() : "";
     const fields = {
-      waiter: waiters.get(normalizeName(waiterName)) ?? null,
-      waiterName,
+      ...(hasWaiter ? { waiter: waiters.get(normalizeName(waiterName)) ?? null, waiterName } : {}),
       date,
       weekday,
       hour,
@@ -410,6 +414,49 @@ export function agentState(
   return now.getTime() - new Date(lastSeenAt).getTime() < AGENT_LIVE_MS ? "live" : "offline";
 }
 
+const MAX_WAITER_TICKETS = 5000;
+
+/**
+ * POST /sync/waiters: el agente baja el reporte de SmartMenu filtrado por
+ * vendedor y avisa qué tickets atendió cada uno. Solo marca tickets que ya
+ * existen; el mesero se crea en la sucursal si no estaba.
+ */
+export async function assignWaiter(body: any) {
+  await ensureDb();
+  const slug = typeof body?.branch === "string" ? body.branch.trim().toLowerCase() : "";
+  const name = typeof body?.waiterName === "string" ? body.waiterName.trim() : "";
+  const ids: unknown[] = Array.isArray(body?.externalIds) ? body.externalIds : [];
+  if (!slug) throw new CustomError("Falta la sucursal (slug)", 400);
+  if (!name) throw new CustomError("Falta el nombre del mesero", 400);
+  if (ids.length > MAX_WAITER_TICKETS) {
+    throw new CustomError(`Manda como máximo ${MAX_WAITER_TICKETS} tickets por mesero`, 413);
+  }
+  const externalIds = [...new Set(ids.map((id) => String(id ?? "").trim()).filter(Boolean))];
+
+  const branch = await Branch.findOne({ slug }).select("_id").lean<any>();
+  if (!branch) throw new CustomError(`La sucursal «${slug}» no existe`, 404);
+  const key = normalizeName(name);
+  const waiter = await Waiter.findOneAndUpdate(
+    { branch: branch._id, normalizedName: key },
+    { $setOnInsert: { name, normalizedName: key, branch: branch._id } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  )
+    .select("_id")
+    .lean<any>();
+  const updated = externalIds.length
+    ? await Sale.updateMany(
+        { branch: branch._id, externalId: { $in: externalIds } },
+        { $set: { waiter: waiter._id, waiterName: name } },
+      )
+    : { matchedCount: 0, modifiedCount: 0 };
+  return {
+    waiter: name,
+    received: externalIds.length,
+    matched: updated.matchedCount,
+    updated: updated.modifiedCount,
+  };
+}
+
 /** Slack cuando un local empieza a fallar o se recupera. Nunca tumba el latido. */
 async function notifyAgentChange(branchName: string, before: string, after: string) {
   if (!env.SLACK_ERROR_WEBHOOK || Boolean(before) === Boolean(after)) return;
@@ -446,7 +493,10 @@ export async function recordHeartbeat(body: any) {
   if (!branch) throw new CustomError(`La sucursal «${slug}» no existe`, 404);
   await notifyAgentChange(branch.name, branch.agentStatus?.lastError ?? "", lastError);
   // El agente que arranca en una máquina nueva carga desde aquí, no solo desde hoy.
-  const lastSale = await Sale.findOne({ branch: branch._id }).sort({ date: -1 }).select("date").lean<any>();
+  const lastSale = await Sale.findOne({ branch: branch._id })
+    .sort({ date: -1 })
+    .select("date")
+    .lean<any>();
   return {
     ok: true,
     branch: { _id: branch._id, name: branch.name, slug: branch.slug },
